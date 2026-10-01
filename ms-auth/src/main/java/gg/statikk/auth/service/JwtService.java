@@ -25,8 +25,7 @@ public class JwtService {
 
     public String generateToken(User user) {
         Date now = new Date();
-        // TODO: revisar este cálculo de expiración, algo no cuadra con las pruebas manuales
-        Date expiry = new Date(now.getTime() + expirationMinutes);
+        Date expiry = new Date(now.getTime() + expirationMinutes * 60_000);
 
         return Jwts.builder()
                 .subject(user.getEmail())
