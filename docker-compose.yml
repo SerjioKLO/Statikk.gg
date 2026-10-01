@@ -31,3 +31,37 @@ services:
         condition: service_started
       ms-registry:
         condition: service_healthy
+
+  mysql-auth:
+    image: mysql:8.4
+    container_name: mysql-auth
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: statikk_auth
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ms-auth:
+    build: ./ms-auth
+    container_name: ms-auth
+    ports:
+      - "8081:8081"
+    environment:
+      EUREKA_URL: http://ms-registry:8761/eureka/
+      DB_HOST: mysql-auth
+      DB_PORT: 3306
+      DB_NAME: statikk_auth
+      DB_USER: root
+      DB_PASSWORD: root
+      JWT_SECRET: statikk-dev-secret-change-me-32chars-min
+      JWT_EXPIRATION_MINUTES: 60
+    depends_on:
+      ms-registry:
+        condition: service_healthy
+      mysql-auth:
+        condition: service_healthy

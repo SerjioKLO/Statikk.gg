@@ -1,0 +1,36 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: ms-auth
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:statikk_auth}?createDatabaseIfNotExist=true
+    username: ${DB_USER:root}
+    password: ${DB_PASSWORD:root}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: true
+
+jwt:
+  # Debe ser EXACTAMENTE el mismo secreto que usa ms-gateway, o el gateway
+  # rechazará como inválidos los tokens que este servicio emita.
+  secret: ${JWT_SECRET:statikk-dev-secret-change-me-32chars-min}
+  expiration-minutes: ${JWT_EXPIRATION_MINUTES:60}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

@@ -12,5 +12,6 @@
     <modules>
         <module>ms-registry</module>
         <module>ms-gateway</module>
+        <module>ms-auth</module>
     </modules>
 </project>
