@@ -1,0 +1,84 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: ms-gateway
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  cloud:
+    gateway:
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
+      routes:
+        # --- Estas rutas apuntan a servicios que aún no existen (llegan en v0.2+) ---
+        # Quedan pre-cableadas para no tener que tocar el gateway en cada versión nueva.
+        - id: ms-auth
+          uri: lb://ms-auth
+          predicates:
+            - Path=/api/auth/**
+
+        - id: ms-player
+          uri: lb://ms-player
+          predicates:
+            - Path=/api/players/**
+          filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 10
+                redis-rate-limiter.burstCapacity: 20
+                key-resolver: "#{@ipKeyResolver}"
+
+        - id: ms-matches
+          uri: lb://ms-matches
+          predicates:
+            - Path=/api/matches/**
+          filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 10
+                redis-rate-limiter.burstCapacity: 20
+                key-resolver: "#{@ipKeyResolver}"
+
+        - id: ms-excel-parser
+          uri: lb://ms-excel-parser
+          predicates:
+            - Path=/api/excel/**
+
+        - id: ms-stats
+          uri: lb://ms-stats
+          predicates:
+            - Path=/api/stats/**
+          filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 20
+                redis-rate-limiter.burstCapacity: 40
+                key-resolver: "#{@ipKeyResolver}"
+
+        - id: ms-notification
+          uri: lb://ms-notification
+          predicates:
+            - Path=/api/notifications/**
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: true
+
+jwt:
+  # ⚠️ Cambiar en producción y usar el MISMO secreto en ms-auth (v0.2).
+  secret: ${JWT_SECRET:statikk-dev-secret-change-me-32chars-min}
+  public-paths: /api/auth/register,/api/auth/login,/api/excel/template,/actuator
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway

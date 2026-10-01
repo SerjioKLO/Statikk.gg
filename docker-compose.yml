@@ -1,0 +1,33 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: statikk-redis
+    ports:
+      - "6379:6379"
+
+  ms-registry:
+    build: ./ms-registry
+    container_name: ms-registry
+    ports:
+      - "8761:8761"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8761/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ms-gateway:
+    build: ./ms-gateway
+    container_name: ms-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      EUREKA_URL: http://ms-registry:8761/eureka/
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: statikk-dev-secret-change-me-32chars-min
+    depends_on:
+      redis:
+        condition: service_started
+      ms-registry:
+        condition: service_healthy

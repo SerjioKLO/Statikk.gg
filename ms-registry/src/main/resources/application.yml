@@ -1,0 +1,27 @@
+server:
+  port: 8761
+
+spring:
+  application:
+    name: ms-registry
+
+eureka:
+  instance:
+    hostname: localhost
+  client:
+    # El propio registry no necesita registrarse a sí mismo
+    register-with-eureka: false
+    fetch-registry: false
+    service-url:
+      defaultZone: http://${eureka.instance.hostname}:${server.port}/eureka/
+  server:
+    # Desactivado para desarrollo local; en producción con varias instancias,
+    # vuelve a activarlo (true) para tolerar particiones de red.
+    enable-self-preservation: false
+    eviction-interval-timer-in-ms: 5000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
