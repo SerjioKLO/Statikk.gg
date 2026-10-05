@@ -27,7 +27,7 @@ public class CreateMatchRequest {
 
     @NotNull(message = "Horas_jugadas es requerido")
     @PositiveOrZero(message = "Horas jugadas no puede ser negativo")
-    private Double houras_jugadas;
+    private Double horas_jugadas;
 
     @PositiveOrZero
     private Integer kills;

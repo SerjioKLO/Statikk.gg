@@ -16,7 +16,7 @@ public class MatchDto {
     private Long gameId;
     private String resultado;
     private Double duracion_minutos;
-    private Double houras_jugadas;
+    private Double horas_jugadas;
     private Integer kills;
     private Integer deaths;
     private Integer assists;

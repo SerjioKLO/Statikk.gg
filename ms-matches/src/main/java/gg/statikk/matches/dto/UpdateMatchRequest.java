@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
 @Builder
 public class UpdateMatchRequest {
 
-    private String result;
+    private String resultado;
     private Double duracion_minutos;
 
     @PositiveOrZero
