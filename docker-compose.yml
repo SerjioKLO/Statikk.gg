@@ -65,3 +65,63 @@ services:
         condition: service_healthy
       mysql-auth:
         condition: service_healthy
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: statikk-rabbitmq
+    environment:
+      # OJO: con el usuario "guest" por defecto, RabbitMQ solo permite
+      # conexiones AMQP desde localhost (loopback_users). Como ms-player
+      # se conecta desde otro contenedor, usamos un usuario propio.
+      RABBITMQ_DEFAULT_USER: statikk
+      RABBITMQ_DEFAULT_PASS: statikk
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mysql-player:
+    image: mysql:8.4
+    container_name: mysql-player
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: statikk_player
+    ports:
+      - "3307:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ms-player:
+    build: ./ms-player
+    container_name: ms-player
+    ports:
+      - "8082:8082"
+    environment:
+      EUREKA_URL: http://ms-registry:8761/eureka/
+      DB_HOST: mysql-player
+      DB_PORT: 3306
+      DB_NAME: statikk_player
+      DB_USER: root
+      DB_PASSWORD: root
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: statikk
+      RABBITMQ_PASSWORD: statikk
+    depends_on:
+      ms-registry:
+        condition: service_healthy
+      mysql-player:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy

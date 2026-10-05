@@ -1,5 +1,6 @@
 package gg.statikk.gateway.filter;
 
+import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -22,10 +23,14 @@ import java.util.List;
  * Valida el JWT en el header Authorization para todas las rutas que no estén
  * en la lista blanca (jwt.public-paths).
  *
- * IMPORTANTE (v0.1): ms-auth todavía no existe (llega en v0.2), así que este
- * filtro no tiene tokens reales que validar todavía. Está aquí ya cableado
- * para que, en cuanto ms-auth empiece a emitir tokens firmados con el mismo
- * jwt.secret, las rutas protegidas funcionen sin tocar el gateway de nuevo.
+ * Además (desde v0.3), una vez validado el token, extrae sus claims y las
+ * reenvía como headers X-User-Id / X-Username / X-User-Role hacia el
+ * microservicio downstream (ej. ms-player), para que este no tenga que
+ * volver a parsear el JWT y simplemente confíe en el gateway.
+ *
+ * En rutas públicas, esos mismos headers se eliminan si vienen del cliente,
+ * para que nadie pueda hacerse pasar por otro usuario llamando directo con
+ * "X-User-Id: 1" sin haber pasado por el login.
  */
 @Component
 public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
@@ -40,13 +45,17 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
         this.publicPaths = Arrays.asList(publicPathsCsv.split(","));
     }
 
+    private static final List<String> IDENTITY_HEADERS = List.of("X-User-Id", "X-Username", "X-User-Role");
+
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         ServerHttpRequest request = exchange.getRequest();
         String path = request.getURI().getPath();
 
         if (isPublic(path)) {
-            return chain.filter(exchange);
+            // Nadie puede colarse como "autenticado" en una ruta pública suplantando el header.
+            ServerHttpRequest sanitized = stripIdentityHeaders(request);
+            return chain.filter(exchange.mutate().request(sanitized).build());
         }
 
         String authHeader = request.getHeaders().getFirst("Authorization");
@@ -55,13 +64,28 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
         }
 
         String token = authHeader.substring(7);
+        Claims claims;
         try {
-            Jwts.parser().verifyWith(signingKey).build().parseSignedClaims(token);
+            claims = Jwts.parser().verifyWith(signingKey).build()
+                    .parseSignedClaims(token)
+                    .getPayload();
         } catch (JwtException | IllegalArgumentException ex) {
             return reject(exchange, "Token inválido o expirado: " + ex.getMessage());
         }
 
-        return chain.filter(exchange);
+        ServerHttpRequest mutatedRequest = stripIdentityHeaders(request).mutate()
+                .header("X-User-Id", String.valueOf(claims.get("userId")))
+                .header("X-Username", String.valueOf(claims.get("username")))
+                .header("X-User-Role", String.valueOf(claims.get("role")))
+                .build();
+
+        return chain.filter(exchange.mutate().request(mutatedRequest).build());
+    }
+
+    private ServerHttpRequest stripIdentityHeaders(ServerHttpRequest request) {
+        return request.mutate()
+                .headers(httpHeaders -> IDENTITY_HEADERS.forEach(httpHeaders::remove))
+                .build();
     }
 
     private boolean isPublic(String path) {

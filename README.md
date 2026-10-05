@@ -70,6 +70,44 @@ curl -i http://localhost:8080/api/players/123 \
 
 Si entre el paso 1 y el paso 2 pasan más de un par de segundos, vas a ver que el gateway devuelve `401` con `X-Auth-Error: Token inválido o expirado` — **aunque el token se acaba de emitir**. Ese es el bug conocido de esta versión: revisa `JwtService.generateToken()`.
 
-## Qué sigue (v0.3)
+## v0.3 — ms-player
 
-Construir `ms-player`: perfiles de jugador y videojuegos asociados, consumiendo el `userId` que ya viaja en el JWT emitido por `ms-auth`.
+Agrega `ms-player` (puerto 8082): perfiles de jugador y videojuegos asociados.
+
+Novedades de esta versión:
+- **`ms-gateway` ahora propaga identidad**: tras validar el JWT, agrega los headers `X-User-Id`, `X-Username` y `X-User-Role` a la petición antes de reenviarla. `ms-player` confía en ellos en vez de volver a parsear el token. En rutas públicas, el gateway borra esos headers si el cliente intentó mandarlos por su cuenta (anti-suplantación).
+- **Caché Redis** en `GET /api/players/{id}`, invalidada en cada update/add-game/delete-game.
+- **RabbitMQ**: al borrar un videojuego se publica `player.game.deleted` en el exchange `statikk.events` (lo consumirá `ms-stats` en v0.6).
+
+### Probarlo de punta a punta
+
+```bash
+docker compose up --build
+
+# 1. Login (requiere el fix del JWT de v0.2 ya aplicado)
+TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"sergio@statikk.gg","password":"supersecreta123"}' | jq -r .token)
+
+# 2. Crear perfil de jugador (el userId lo pone el gateway, no tú)
+curl -s -X POST http://localhost:8080/api/players \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"displayName":"Sergio","country":"CL"}' | jq
+
+# 3. Agregar un videojuego (usa el "id" que devolvió el paso 2)
+curl -s -X POST http://localhost:8080/api/players/1/games \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"gameName":"League of Legends","platform":"PC","rankLabel":"Diamante","hoursPlayed":320}' | jq
+
+# 4. Confirmar que quedó en caché (revisa los logs: la segunda llamada no debería pegarle a MySQL)
+curl -s http://localhost:8080/api/players/1 | jq
+curl -s http://localhost:8080/api/players/1 | jq
+```
+
+Prueba también el caso prohibido: intenta mandar `X-User-Id: 999` manualmente en el header de una petición — el gateway lo va a pisar igual con tu userId real del token, así que no sirve para suplantar a otro usuario.
+
+## Qué sigue (v0.4)
+
+Construir `ms-matches`: historial de partidas, relacionado con los perfiles y videojuegos que ya existen en `ms-player`.

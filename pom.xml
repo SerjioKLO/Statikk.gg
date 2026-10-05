@@ -13,5 +13,6 @@
         <module>ms-registry</module>
         <module>ms-gateway</module>
         <module>ms-auth</module>
+        <module>ms-player</module>
     </modules>
 </project>
