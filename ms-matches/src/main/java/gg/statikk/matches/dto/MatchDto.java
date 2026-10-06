@@ -15,13 +15,13 @@ public class MatchDto {
     private Long userId;
     private Long gameId;
     private String resultado;
-    private Double duracion_minutos;
-    private Double horas_jugadas;
+    private Double duracionMinutos;
+    private Double horasJugadas;
     private Integer kills;
     private Integer deaths;
     private Integer assists;
-    private String campeon_o_personaje;
-    private String modo_de_juego;
+    private String campeonOPersonaje;
+    private String modoDeJuego;
     private String notas;
     private LocalDateTime playedAt;
     private LocalDateTime createdAt;

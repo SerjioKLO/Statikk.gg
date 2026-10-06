@@ -25,20 +25,20 @@ public class Matches {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private long id;
 
-    @Column(name = "user_id", nullable = false)
-    private long user_id;
+    @Column(name = "userId", nullable = false)
+    private long userId;
 
-    @Column(name = "game_id", nullable = false)
-    private long game_id;
+    @Column(name = "gameId", nullable = false)
+    private long gameId;
 
     @Column(name = "resultado", nullable = false, length = 10)
     private String resultado;
 
-    @Column(name = "duracion_minutos", nullable = false)
-    private Double duracion_minutos;
+    @Column(name = "duracionMinutos", nullable = false)
+    private Double duracionMinutos;
 
-    @Column(name = "horas_jugadas", nullable = false)
-    private Double horas_jugadas;
+    @Column(name = "horasJugadas", nullable = false)
+    private Double horasJugadas;
 
     @Column(name = "kills")
     private Integer kills = 0;
@@ -49,11 +49,11 @@ public class Matches {
     @Column(name = "assists")
     private Integer assists = 0;
 
-    @Column(name = "campeon_o_personaje", length = 100)
-    private String campeon_o_personaje;
+    @Column(name = "campeonOPersonaje", length = 100)
+    private String campeonOPersonaje;
 
-    @Column(name = "modo_de_juego", length = 50)
-    private String modo_de_juego;
+    @Column(name = "modoDeJuego", length = 50)
+    private String modoDeJuego;
 
     @Column(name = "notas", length = 255)
     private String notas;

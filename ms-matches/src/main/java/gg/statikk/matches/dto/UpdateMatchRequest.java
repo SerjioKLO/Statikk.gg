@@ -13,10 +13,10 @@ import java.time.LocalDateTime;
 public class UpdateMatchRequest {
 
     private String resultado;
-    private Double duracion_minutos;
+    private Double duracionMinutos;
 
     @PositiveOrZero
-    private Double horas_jugadas;
+    private Double horasJugadas;
 
     @PositiveOrZero
     private Integer kills;
@@ -27,8 +27,8 @@ public class UpdateMatchRequest {
     @PositiveOrZero
     private Integer assists;
 
-    private String campeon_o_personaje;
-    private String modo_de_juego;
+    private String campeonOPersonaje;
+    private String modoDeJuego;
     private String notas;
     private LocalDateTime playedAt;
 }
