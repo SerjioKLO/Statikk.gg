@@ -20,6 +20,14 @@ spring:
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USER:statikk}
     password: ${RABBITMQ_PASSWORD:statikk}
+    listener:
+      simple:
+        # Sin esto, un mensaje que falla se reencola para siempre ("poison message").
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 1000ms
   cloud:
     openfeign:
       client:

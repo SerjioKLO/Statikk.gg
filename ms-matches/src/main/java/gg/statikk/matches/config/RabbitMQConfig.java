@@ -1,8 +1,14 @@
 package gg.statikk.matches.config;
 
+import org.springframework.amqp.core.Binding;
+import org.springframework.amqp.core.BindingBuilder;
+import org.springframework.amqp.core.Queue;
+import org.springframework.amqp.core.QueueBuilder;
 import org.springframework.amqp.core.TopicExchange;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.amqp.support.converter.DefaultJackson2JavaTypeMapper;
+import org.springframework.amqp.support.converter.Jackson2JavaTypeMapper;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -13,14 +19,37 @@ public class RabbitMQConfig {
     /** Mismo exchange compartido que declara ms-player; RabbitMQ no duplica si ya existe con la misma config. */
     public static final String EVENTS_EXCHANGE = "statikk.events";
 
+    /** Cola propia de ms-matches para las importaciones masivas que publica ms-excel-parser. */
+    public static final String EXCEL_IMPORT_QUEUE = "ms-matches.excel-imports";
+    public static final String EXCEL_IMPORT_ROUTING_KEY = "excel.matches.imported";
+
     @Bean
     public TopicExchange eventsExchange() {
         return new TopicExchange(EVENTS_EXCHANGE, true, false);
     }
 
     @Bean
+    public Queue excelImportQueue() {
+        return QueueBuilder.durable(EXCEL_IMPORT_QUEUE).build();
+    }
+
+    @Bean
+    public Binding excelImportBinding(Queue excelImportQueue, TopicExchange eventsExchange) {
+        return BindingBuilder.bind(excelImportQueue).to(eventsExchange).with(EXCEL_IMPORT_ROUTING_KEY);
+    }
+
+    /**
+     * Por defecto el mensaje trae el nombre de la clase del PRODUCTOR en su cabecera
+     * (gg.statikk.excel.event.ExcelMatchesImportedEvent), que no existe en este servicio.
+     * Con INFERRED, el tipo se deduce del parámetro del método @RabbitListener.
+     */
+    @Bean
     public Jackson2JsonMessageConverter messageConverter() {
-        return new Jackson2JsonMessageConverter();
+        Jackson2JsonMessageConverter converter = new Jackson2JsonMessageConverter();
+        DefaultJackson2JavaTypeMapper typeMapper = new DefaultJackson2JavaTypeMapper();
+        typeMapper.setTypePrecedence(Jackson2JavaTypeMapper.TypePrecedence.INFERRED);
+        converter.setJavaTypeMapper(typeMapper);
+        return converter;
     }
 
     @Bean
