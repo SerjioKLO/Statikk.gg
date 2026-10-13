@@ -23,6 +23,10 @@ public class RabbitMQConfig {
     public static final String EXCEL_IMPORT_QUEUE = "ms-matches.excel-imports";
     public static final String EXCEL_IMPORT_ROUTING_KEY = "excel.matches.imported";
 
+    /** Cola propia de ms-matches para el borrado en cascada cuando un jugador elimina un videojuego. */
+    public static final String PLAYER_GAME_DELETED_QUEUE = "ms-matches.player-game-deleted";
+    public static final String PLAYER_GAME_DELETED_ROUTING_KEY = "player.game.deleted";
+
     @Bean
     public TopicExchange eventsExchange() {
         return new TopicExchange(EVENTS_EXCHANGE, true, false);
@@ -36,6 +40,16 @@ public class RabbitMQConfig {
     @Bean
     public Binding excelImportBinding(Queue excelImportQueue, TopicExchange eventsExchange) {
         return BindingBuilder.bind(excelImportQueue).to(eventsExchange).with(EXCEL_IMPORT_ROUTING_KEY);
+    }
+
+    @Bean
+    public Queue playerGameDeletedQueue() {
+        return QueueBuilder.durable(PLAYER_GAME_DELETED_QUEUE).build();
+    }
+
+    @Bean
+    public Binding playerGameDeletedBinding(Queue playerGameDeletedQueue, TopicExchange eventsExchange) {
+        return BindingBuilder.bind(playerGameDeletedQueue).to(eventsExchange).with(PLAYER_GAME_DELETED_ROUTING_KEY);
     }
 
     /**

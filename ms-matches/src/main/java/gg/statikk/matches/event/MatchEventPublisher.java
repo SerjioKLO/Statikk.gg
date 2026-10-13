@@ -23,6 +23,12 @@ public class MatchEventPublisher {
                 event.matchId(), event.playerProfileId());
     }
 
+    public void publishMatchesBulkDeleted(MatchesBulkDeletedEvent event) {
+        rabbitTemplate.convertAndSend(RabbitMQConfig.EVENTS_EXCHANGE, "match.bulk.deleted", event);
+        log.info("Evento publicado: match.bulk.deleted -> playerProfileId={}, juego='{}', partidas={}",
+                event.playerProfileId(), event.gameName(), event.matchesDeleted());
+    }
+
     public void publishMatchesBulkImported(MatchesBulkImportedEvent event) {
         rabbitTemplate.convertAndSend(RabbitMQConfig.EVENTS_EXCHANGE, "match.bulk.imported", event);
         log.info("Evento publicado: match.bulk.imported -> importId={}, playerProfileId={}, partidas={}",
