@@ -17,5 +17,6 @@
         <module>ms-matches</module>
         <module>ms-excel-parser</module>
         <module>ms-stats</module>
+        <module>ms-notification</module>
     </modules>
 </project>

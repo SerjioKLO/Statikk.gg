@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Statikk.gg — cliente de notificaciones (prueba)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; line-height: 1.4; }
+    label { display: block; margin-top: .8rem; font-weight: 600; }
+    input, textarea { width: 100%; box-sizing: border-box; padding: .5rem; font-family: monospace; }
+    textarea { height: 5rem; }
+    button { margin: .8rem .5rem 0 0; padding: .5rem 1rem; cursor: pointer; }
+    #status { margin-top: 1rem; padding: .5rem .8rem; border-radius: 6px; background: #eee; }
+    #status.on { background: #d7f5dd; }
+    #status.err { background: #fbdada; }
+    ul { list-style: none; padding: 0; }
+    li { border: 1px solid #ccc; border-radius: 8px; padding: .6rem .9rem; margin-top: .6rem; }
+    li strong { display: block; }
+    li small { color: #666; }
+  </style>
+</head>
+<body>
+  <h1>Notificaciones en tiempo real</h1>
+  <p>Página de prueba para <code>ms-notification</code>. Pega un token JWT (el <code>token</code> que devuelve
+     <code>POST /api/auth/login</code>) y conecta. Las notificaciones aparecen aquí cuando
+     <code>ms-stats</code> termina de recalcular tus métricas.</p>
+
+  <label for="host">Gateway (host:puerto)</label>
+  <input id="host" value="localhost:8080">
+
+  <label for="token">Token JWT</label>
+  <textarea id="token" placeholder="eyJhbGciOi..."></textarea>
+
+  <button id="connect">Conectar</button>
+  <button id="disconnect" disabled>Desconectar</button>
+
+  <div id="status">Desconectado</div>
+  <ul id="list"></ul>
+
+  <script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7.0.0/bundles/stomp.umd.min.js"></script>
+  <script>
+    const statusEl = document.getElementById('status');
+    const listEl = document.getElementById('list');
+    const connectBtn = document.getElementById('connect');
+    const disconnectBtn = document.getElementById('disconnect');
+    let client = null;
+
+    function setStatus(text, cls) {
+      statusEl.textContent = text;
+      statusEl.className = cls || '';
+    }
+
+    function addNotification(n) {
+      // textContent (no innerHTML): el contenido viene del servidor, pero nunca se interpreta como HTML
+      const li = document.createElement('li');
+      const title = document.createElement('strong');
+      title.textContent = n.title;
+      const msg = document.createElement('div');
+      msg.textContent = n.message;
+      const when = document.createElement('small');
+      when.textContent = new Date(n.createdAt).toLocaleString() + '  ·  id ' + n.id;
+      li.append(title, msg, when);
+      listEl.prepend(li);
+    }
+
+    connectBtn.addEventListener('click', () => {
+      const host = document.getElementById('host').value.trim();
+      const token = document.getElementById('token').value.trim();
+      if (!token) { setStatus('Falta el token', 'err'); return; }
+
+      // El navegador no permite headers en el handshake WebSocket: el token va en la URL (solo en /ws/**)
+      const brokerURL = 'ws://' + host + '/ws/notifications?access_token=' + encodeURIComponent(token);
+
+      client = new StompJs.Client({
+        brokerURL,
+        heartbeatIncoming: 10000,
+        heartbeatOutgoing: 10000,
+        reconnectDelay: 0, // sin reconexión automática: un token vencido reintentaría en bucle
+        onConnect: () => {
+          setStatus('Conectado. Esperando notificaciones…', 'on');
+          client.subscribe('/user/queue/notifications', (frame) => addNotification(JSON.parse(frame.body)));
+          connectBtn.disabled = true;
+          disconnectBtn.disabled = false;
+        },
+        onStompError: (frame) => setStatus('Error STOMP: ' + (frame.headers.message || frame.body), 'err'),
+        onWebSocketError: () => setStatus('No se pudo conectar (¿token inválido/vencido o gateway apagado?)', 'err'),
+        onWebSocketClose: () => {
+          if (statusEl.className !== 'err') setStatus('Desconectado');
+          connectBtn.disabled = false;
+          disconnectBtn.disabled = true;
+        },
+      });
+      setStatus('Conectando…');
+      client.activate();
+    });
+
+    disconnectBtn.addEventListener('click', () => { if (client) client.deactivate(); });
+  </script>
+</body>
+</html>

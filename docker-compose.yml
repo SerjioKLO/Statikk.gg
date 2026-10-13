@@ -233,3 +233,60 @@ services:
         condition: service_healthy
       ms-matches:
         condition: service_started
+      # ms-notification declara la cola "ms-notification.stats-events"; si ms-stats publica antes de que
+      # exista, RabbitMQ descarta el mensaje (no hay ninguna cola enlazada todavía).
+      ms-notification:
+        condition: service_started
+
+  # Servidor SMTP de pruebas: captura los correos en vez de enviarlos. Bandeja web en http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: statikk-mailpit
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+  mysql-notification:
+    image: mysql:8.4
+    container_name: mysql-notification
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: statikk_notification
+    ports:
+      - "3310:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ms-notification:
+    build: ./ms-notification
+    container_name: ms-notification
+    ports:
+      - "8086:8086"
+    environment:
+      EUREKA_URL: http://ms-registry:8761/eureka/
+      DB_HOST: mysql-notification
+      DB_PORT: 3306
+      DB_NAME: statikk_notification
+      DB_USER: root
+      DB_PASSWORD: root
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: statikk
+      RABBITMQ_PASSWORD: statikk
+      MAIL_ENABLED: "true"
+      MAIL_HOST: mailpit
+      MAIL_PORT: 1025
+    depends_on:
+      ms-registry:
+        condition: service_healthy
+      mysql-notification:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      ms-player:
+        condition: service_started
+      mailpit:
+        condition: service_started

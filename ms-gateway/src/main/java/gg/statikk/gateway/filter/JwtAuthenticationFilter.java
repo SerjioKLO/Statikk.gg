@@ -31,6 +31,11 @@ import java.util.List;
  * En rutas públicas, esos mismos headers se eliminan si vienen del cliente,
  * para que nadie pueda hacerse pasar por otro usuario llamando directo con
  * "X-User-Id: 1" sin haber pasado por el login.
+ *
+ * Desde v0.7, en rutas /ws/** (WebSocket) el token también puede venir en el
+ * parámetro "access_token", porque los navegadores no permiten headers en el
+ * handshake. Ver WebSocketTokenSupport. El token solo se valida al CONECTAR:
+ * una conexión ya abierta sigue viva aunque el token expire después.
  */
 @Component
 public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
@@ -58,12 +63,18 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
             return chain.filter(exchange.mutate().request(sanitized).build());
         }
 
-        String authHeader = request.getHeaders().getFirst("Authorization");
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            return reject(exchange, "Falta el header Authorization con un Bearer token");
+        boolean webSocket = WebSocketTokenSupport.isWebSocketPath(path);
+
+        String token = bearerToken(request);
+        if (token == null && webSocket) {
+            token = WebSocketTokenSupport.tokenFromQuery(request.getQueryParams());
+        }
+        if (token == null) {
+            return reject(exchange, webSocket
+                    ? "Falta el token: conecta con ?access_token=<JWT> (el WebSocket del navegador no permite headers)"
+                    : "Falta el header Authorization con un Bearer token");
         }
 
-        String token = authHeader.substring(7);
         Claims claims;
         try {
             claims = Jwts.parser().verifyWith(signingKey).build()
@@ -73,13 +84,22 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
             return reject(exchange, "Token inválido o expirado: " + ex.getMessage());
         }
 
-        ServerHttpRequest mutatedRequest = stripIdentityHeaders(request).mutate()
+        ServerHttpRequest.Builder forwarded = stripIdentityHeaders(request).mutate()
                 .header("X-User-Id", String.valueOf(claims.get("userId")))
                 .header("X-Username", String.valueOf(claims.get("username")))
-                .header("X-User-Role", String.valueOf(claims.get("role")))
-                .build();
+                .header("X-User-Role", String.valueOf(claims.get("role")));
+        if (webSocket) {
+            // El token ya cumplió su función: no se reenvía al microservicio (ni a sus logs).
+            forwarded.uri(WebSocketTokenSupport.stripTokenParam(request.getURI()));
+        }
+        ServerHttpRequest mutatedRequest = forwarded.build();
 
         return chain.filter(exchange.mutate().request(mutatedRequest).build());
+    }
+
+    private String bearerToken(ServerHttpRequest request) {
+        String authHeader = request.getHeaders().getFirst("Authorization");
+        return (authHeader != null && authHeader.startsWith("Bearer ")) ? authHeader.substring(7) : null;
     }
 
     private ServerHttpRequest stripIdentityHeaders(ServerHttpRequest request) {

@@ -271,6 +271,90 @@ curl -s http://localhost:8080/api/stats/players/1 -H "Authorization: Bearer $TOK
 
 Para ver el job en acción: `docker compose logs -f ms-stats`.
 
-## Qué sigue (v0.7)
+## v0.7 — ms-notification
 
-Construir `ms-notification`: consume `stats.calculated` y avisa al jugador en tiempo real por WebSocket/STOMP, con envío de correo opcional.
+Agrega `ms-notification` (puerto 8086): avisa al jugador cuando sus estadísticas cambian, en tiempo real por WebSocket y, opcionalmente, por correo.
+
+```
+ms-stats ──stats.calculated──▶ cola ms-notification.stats-events
+                                      │
+   1. Feign a ms-player: perfil -> usuario dueño (el evento trae el id del PERFIL, hay que notificar al USUARIO)
+   2. ¿Cambió algo desde la última vez?  No -> no se notifica (evita ruido). Sí ->
+   3. Guarda la notificación en MySQL (siempre)
+   4. WebSocket: /user/queue/notifications   +   Correo (solo si el usuario lo activó)
+```
+
+Qué hace:
+- **Tiempo real**: STOMP sobre WebSocket nativo. El mensaje llega solo al usuario dueño (`convertAndSendToUser`), con mensajes como `"7 partidas (+2), victorias 57.1% (-2.9), KDA 2.10 (-0.28)."`. No se notifica si las métricas no cambiaron.
+- **Historial por REST**: las notificaciones quedan guardadas, así que un usuario desconectado las ve después.
+- **Correo opt-in**: nadie recibe correos hasta activarlo en `PUT /api/notifications/preferences`. En desarrollo los correos los captura **Mailpit** (bandeja en http://localhost:8025), no salen a Internet.
+
+Endpoints (todos con JWT; el usuario sale del token, nunca de la URL):
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/api/notifications?unreadOnly=false&limit=20` | Mis notificaciones, la más nueva primero (máx. 100) |
+| GET | `/api/notifications/unread-count` | Cuántas tengo sin leer |
+| PUT | `/api/notifications/{id}/read` | Marcar una como leída (404 si no es mía) |
+| POST | `/api/notifications/read-all` | Marcar todas como leídas |
+| GET/PUT | `/api/notifications/preferences` | Ver/cambiar `{"emailEnabled": true, "email": "..."}` |
+| WS | `ws://localhost:8080/ws/notifications?access_token=<JWT>` | Conexión en tiempo real |
+
+### Cambios en el gateway
+
+- **Autenticación del WebSocket**: los navegadores no permiten enviar headers en el handshake, así que en rutas `/ws/**` el gateway acepta el JWT como `?access_token=` (además del header `Authorization`) y **lo elimina de la URL antes de reenviar** al servicio. Compromiso conocido: un token en la URL puede quedar en logs de proxies/navegador; por eso solo se acepta en `/ws/**`. Además, el token se valida **solo al conectar**: una conexión ya abierta sigue viva aunque el token expire después.
+- **Nueva ruta** `lb:ws://ms-notification` con rate limit de 5 conexiones/s por IP.
+- **Corrección de seguridad**: desactivé `discovery.locator`, que desde v0.1 creaba rutas automáticas `/<servicio>/**` (ej. `/ms-player/api/players/1`) para todo lo registrado en Eureka. Esas rutas **se saltaban el rate limiting** de las rutas explícitas y exponían cualquier endpoint de cualquier servicio. Todas las rutas necesarias ya estaban declaradas, así que no cambia nada de lo documentado.
+
+### Seguridad del WebSocket
+- El handshake exige el header `X-User-Id` que solo el gateway pone (si alguien llega directo al servicio, 401).
+- Un cliente solo puede suscribirse a `/user/queue/**` (su cola personal) y **no puede enviar** mensajes; cualquier otra cosa corta la conexión con un frame ERROR.
+
+### Probarlo
+
+```bash
+docker compose up --build
+
+TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"sergio@statikk.gg","password":"supersecreta123"}' | jq -r .token)
+
+# 1. Activa el correo (opt-in)
+curl -s -X PUT http://localhost:8080/api/notifications/preferences \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"emailEnabled":true,"email":"sergio@statikk.gg"}' | jq
+
+# 2. Abre samples/ws-client.html en el navegador, pega el token y pulsa "Conectar"
+
+# 3. Importa el CSV de ejemplo en un perfil nuevo (v0.5) y espera ~25 s
+curl -s -X POST "http://localhost:8080/api/excel/matches/import?playerProfileId=1" \
+  -H "Authorization: Bearer $TOKEN" -F "file=@samples/partidas-ejemplo.csv;type=text/csv" | jq
+```
+En ~25 s deberías ver, **en la página** y **en Mailpit (http://localhost:8025)**:
+`Estadísticas calculadas — Ya tienes estadísticas: 5 partidas, 60.0% de victorias, KDA 2.38.`
+
+```bash
+# 4. Registra UNA partida más y mira cómo llega la VARIACIÓN
+curl -s -X POST http://localhost:8080/api/matches \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"playerProfileId":1,"gameName":"League of Legends","result":"LOSS","kills":2,"deaths":7,"assists":4}' | jq
+# ~25 s después:  "6 partidas (+1), victorias 50.0% (-10.0), KDA 2.16 (-0.22)."
+
+# 5. Historial por REST (funciona aunque no estuvieras conectado)
+curl -s http://localhost:8080/api/notifications -H "Authorization: Bearer $TOKEN" | jq
+curl -s http://localhost:8080/api/notifications/unread-count -H "Authorization: Bearer $TOKEN" | jq
+curl -s -X PUT http://localhost:8080/api/notifications/1/read -H "Authorization: Bearer $TOKEN" | jq
+curl -s -X POST http://localhost:8080/api/notifications/read-all -H "Authorization: Bearer $TOKEN" | jq
+
+# 6. Seguridad: sin token el handshake se rechaza
+curl -i "http://localhost:8080/ws/notifications"          # 401 "Falta el token..."
+```
+
+### Limitaciones conocidas
+- **Una sola instancia**: usa el broker STOMP en memoria. Para escalar a varias instancias habría que pasar a un broker externo (`enableStompBrokerRelay` con el plugin STOMP de RabbitMQ).
+- **Mejor esfuerzo**: si `ms-player` falla, el mensaje se reintenta 3 veces y luego se descarta (las estadísticas siguen disponibles en `ms-stats`). El correo no se reintenta.
+- **Correo sin verificar**: la dirección que el usuario indica no se confirma (no hay enlace de verificación), por eso es opt-in y de bajo volumen.
+
+## Qué sigue (v1.0)
+
+Integración final: script de prueba de humo de punta a punta (`scripts/smoke-test.sh`: registro → perfil → importación → estadísticas → notificación), healthchecks para todos los servicios en el compose, y documentación consolidada.
