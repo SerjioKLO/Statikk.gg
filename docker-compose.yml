@@ -125,3 +125,111 @@ services:
         condition: service_started
       rabbitmq:
         condition: service_healthy
+
+  mysql-matches:
+    image: mysql:8.4
+    container_name: mysql-matches
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: statikk_matches
+    ports:
+      - "3308:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ms-matches:
+    build: ./ms-matches
+    container_name: ms-matches
+    ports:
+      - "8083:8083"
+    environment:
+      EUREKA_URL: http://ms-registry:8761/eureka/
+      DB_HOST: mysql-matches
+      DB_PORT: 3306
+      DB_NAME: statikk_matches
+      DB_USER: root
+      DB_PASSWORD: root
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: statikk
+      RABBITMQ_PASSWORD: statikk
+    depends_on:
+      ms-registry:
+        condition: service_healthy
+      mysql-matches:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      ms-player:
+        condition: service_started
+
+  ms-excel-parser:
+    build: ./ms-excel-parser
+    container_name: ms-excel-parser
+    ports:
+      - "8085:8085"
+    environment:
+      EUREKA_URL: http://ms-registry:8761/eureka/
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: statikk
+      RABBITMQ_PASSWORD: statikk
+    depends_on:
+      ms-registry:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      ms-player:
+        condition: service_started
+      # ms-matches declara la cola "ms-matches.excel-imports"; si el parser publica antes
+      # de que exista, RabbitMQ descarta el mensaje (no hay ninguna cola enlazada todavía).
+      ms-matches:
+        condition: service_started
+
+  mysql-stats:
+    image: mysql:8.4
+    container_name: mysql-stats
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: statikk_stats
+    ports:
+      - "3309:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ms-stats:
+    build: ./ms-stats
+    container_name: ms-stats
+    ports:
+      - "8084:8084"
+    environment:
+      EUREKA_URL: http://ms-registry:8761/eureka/
+      DB_HOST: mysql-stats
+      DB_PORT: 3306
+      DB_NAME: statikk_stats
+      DB_USER: root
+      DB_PASSWORD: root
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: statikk
+      RABBITMQ_PASSWORD: statikk
+      STATS_BATCH_INTERVAL_MS: 10000
+    depends_on:
+      ms-registry:
+        condition: service_healthy
+      mysql-stats:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+      ms-matches:
+        condition: service_started

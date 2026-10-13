@@ -14,5 +14,8 @@
         <module>ms-gateway</module>
         <module>ms-auth</module>
         <module>ms-player</module>
+        <module>ms-matches</module>
+        <module>ms-excel-parser</module>
+        <module>ms-stats</module>
     </modules>
 </project>

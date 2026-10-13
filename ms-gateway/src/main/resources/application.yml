@@ -48,6 +48,13 @@ spring:
           uri: lb://ms-excel-parser
           predicates:
             - Path=/api/excel/**
+          filters:
+            # Más estricto que el resto: cada upload implica parsear un archivo y publicar un evento grande
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 2
+                redis-rate-limiter.burstCapacity: 5
+                key-resolver: "#{@ipKeyResolver}"
 
         - id: ms-stats
           uri: lb://ms-stats
