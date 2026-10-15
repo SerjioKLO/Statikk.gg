@@ -1,10 +1,10 @@
-# 📚 Catálogo Completo de Endpoints - Statikk.gg
+#  Catálogo Completo de Endpoints - Statikk.gg
 
 Guía de referencia y documentación de todos los endpoints de la plataforma de microservicios **Statikk.gg**, incluyendo especificaciones de cabeceras, parámetros, payloads JSON de ejemplo para peticiones `POST` y `PUT`, respuestas esperadas y ejemplos listos para `cURL` o clientes HTTP (Postman, Insomnia, Thunder Client).
 
 ---
 
-## 🌐 Configuración General y Entornos
+##  Configuración General y Entornos
 
 Todas las peticiones pueden realizarse de forma centralizada a través del **API Gateway** o accediendo directamente al microservicio correspondiente:
 
@@ -21,7 +21,7 @@ Todas las peticiones pueden realizarse de forma centralizada a través del **API
 
 ---
 
-## 🔐 Autenticación y Seguridad (JWT)
+##  Autenticación y Seguridad (JWT)
 
 - **Endpoints Públicos**:
   - `POST /api/auth/register`
@@ -41,7 +41,7 @@ Todas las peticiones pueden realizarse de forma centralizada a través del **API
 
 ---
 
-## 🔄 Flujo Rápido de Prueba (Happy Path)
+##  Flujo Rápido de Prueba (Happy Path)
 
 1. Registrar usuario en **`POST /api/auth/register`**.
 2. Obtener JWT en **`POST /api/auth/login`**.
@@ -52,7 +52,7 @@ Todas las peticiones pueden realizarse de forma centralizada a través del **API
 
 ---
 
-## 1. 🛡️ Microservicio de Autenticación (`ms-auth`)
+## 1.  Microservicio de Autenticación (`ms-auth`)
 
 Ruta base Gateway: `http://localhost:8080/api/auth`  
 Ruta directa: `http://localhost:8081/api/auth`
@@ -720,7 +720,7 @@ curl -X DELETE http://localhost:8080/api/matches/user/1/game/1 \
 
 ---
 
-## 4. 📊 Microservicio de Estadísticas (`ms-stats`)
+## 4.  Microservicio de Estadísticas (`ms-stats`)
 
 Ruta base Gateway: `http://localhost:8080/api/stats`  
 Ruta directa: `http://localhost:8084/api/stats`
@@ -898,7 +898,7 @@ curl -X POST http://localhost:8080/api/stats/batch/run \
 
 ---
 
-## 5. 📑 Microservicio Ingesta Masiva Excel / CSV (`ms-excel-parser`)
+## 5.  Microservicio Ingesta Masiva Excel / CSV (`ms-excel-parser`)
 
 Ruta base Gateway: `http://localhost:8080/api/excel`  
 Ruta directa: `http://localhost:8085/api/excel`
@@ -964,7 +964,7 @@ curl -X GET http://localhost:8080/api/excel/template \
 
 ---
 
-## 6. 🔔 Microservicio de Notificaciones (`ms-notification`)
+## 6.  Microservicio de Notificaciones (`ms-notification`)
 
 Ruta base Gateway: `http://localhost:8080/api/notifications`  
 Ruta directa: `http://localhost:8086/api/notifications`
@@ -1068,7 +1068,7 @@ Permite a la aplicación cliente recibir notificaciones push en tiempo real a tr
 
 ---
 
-## 7. 📑 Resumen Rápido de Payloads JSON (Copiar y Pegar)
+## 7. Resumen Rápido de Payloads JSON (Copiar y Pegar)
 
 ### `POST /api/auth/register`
 ```json
@@ -1143,7 +1143,7 @@ Permite a la aplicación cliente recibir notificaciones push en tiempo real a tr
 
 ---
 
-## 8. 🩺 Actuator y Monitoreo de Microservicios
+## 8.  Actuator y Monitoreo de Microservicios
 
 Endpoints estándar de Spring Boot Actuator disponibles en cada microservicio y a través del API Gateway:
 
