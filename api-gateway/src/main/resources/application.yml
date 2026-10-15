@@ -1,0 +1,62 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: ms-gateway
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  cloud:
+    gateway:
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
+      routes:
+        - id: ms-auth
+          uri: lb://ms-auth
+          predicates:
+            - Path=/api/auth/**
+
+        - id: ms-player
+          uri: lb://ms-player
+          predicates:
+            - Path=/api/players/**, /api/games/**
+
+        - id: ms-matches
+          uri: lb://ms-matches
+          predicates:
+            - Path=/api/matches/**
+
+        - id: ms-stats
+          uri: lb://ms-stats
+          predicates:
+            - Path=/api/stats/**
+
+        - id: ms-excel-parser
+          uri: lb://ms-excel-parser
+          predicates:
+            - Path=/api/excel/**
+
+        - id: ms-notification
+          uri: lb://ms-notification
+          predicates:
+            - Path=/api/notifications/**, /ws/**
+
+eureka:
+  instance:
+    prefer-ip-address: true
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URI:http://localhost:8761/eureka/}
+
+jwt:
+  secret: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics

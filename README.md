@@ -1,360 +1,136 @@
-# Statikk.gg — v0.1 Infraestructura base
+# Statikk.gg - Video Game Statistics Tracking Microservices Platform
 
-Esta versión entrega únicamente la **columna vertebral** de la arquitectura:
+[![Java 21](https://img.shields.io/badge/Java-21-orange.svg)](https://openjdk.org/)
+[![Spring Boot 3.3.4](https://img.shields.io/badge/Spring%20Boot-3.3.4-brightgreen.svg)](https://spring.io/projects/spring-boot)
+[![Spring Cloud 2023.0.3](https://img.shields.io/badge/Spring%20Cloud-2023.0.3-blue.svg)](https://spring.io/projects/spring-cloud)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-- `ms-registry` (puerto 8761) — Eureka Server, descubrimiento de servicios.
-- `ms-gateway` (puerto 8080) — Spring Cloud Gateway, con:
-  - Enrutamiento pre-configurado hacia los 6 microservicios futuros (`lb://ms-auth`, `lb://ms-player`, etc.) vía Eureka.
-  - Rate limiting con Redis (`RequestRateLimiter`) en las rutas de mayor tráfico esperado.
-  - Filtro global de validación JWT (`JwtAuthenticationFilter`), ya cableado para cuando `ms-auth` (v0.2) empiece a emitir tokens con el mismo `jwt.secret`.
+Plataforma distribuida de alto rendimiento basada en microservicios para el registro, ingesta masiva (Excel/CSV), procesamiento analítico por lotes y visualización centralizada de estadísticas de videojuegos.
 
-Como ningún microservicio de dominio existe todavía, las rutas `/api/auth/**`, `/api/players/**`, etc. devolverán `503 Service Unavailable` hasta que construyas esos servicios en las siguientes versiones — eso es esperado.
+---
 
-## Cómo correrlo
+## 🏛️ 1. Arquitectura del Sistema
 
-### Opción A — Docker Compose (recomendado)
-
-```bash
-cd statikk-v0.1
-docker compose up --build
+```
+                        [ Cliente Web / Móvil ]
+                                  │
+                                  ▼
+               ┌──────────────────────────────────────┐
+               │     ms-gateway (Spring Cloud)        │ :8080
+               │  - Filtro Global JWT & Seguridad     │
+               │  - Rate Limiting con Redis           │
+               └──────────────────┬───────────────────┘
+                                  │
+      ┌──────────────┬────────────┼────────────┬─────────────┬─────────────┐
+      ▼              ▼            ▼            ▼             ▼             ▼
+┌───────────┐  ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌──────────────┐
+│  ms-auth  │  │ ms-player │ │ms-matches │ │ ms-stats  │ │ ms-notif  │ │ms-excel-parse│
+│   :8081   │  │   :8082   │ │   :8083   │ │   :8084   │ │   :8086   │ │    :8085     │
+│ (auth_db) │  │(player_db)│ │ (match_db)│ │ (stats_db)│ │ (notif_db)│ │  Apache POI  │
+└─────┬─────┘  └─────┬─────┘ └─────┬─────┘ └─────┬─────┘ └─────┬─────┘ └──────┬───────┘
+      │              │             │             │             │              │
+      └──────────────┴─────────────┴──────┬──────┴─────────────┴──────────────┘
+                                          │
+                     ┌────────────────────▼───────────────────┐
+                     │         RabbitMQ Event Broker          │ :5672
+                     │  - excel.matches.imported              │
+                     │  - matches.updated                     │
+                     │  - stats.calculated                    │
+                     │  - player.game.deleted                 │
+                     └────────────────────────────────────────┘
 ```
 
-Esto levanta Redis, `ms-registry` y `ms-gateway` en orden correcto (el gateway espera a que el registry esté healthy).
+---
 
-### Opción B — Localmente con Maven
+## 📦 2. Catálogo de Microservicios y Stack Tecnológico
 
-Necesitas Java 21 y Maven instalados, y Redis corriendo en `localhost:6379`.
+| ID | Microservicio | Directorio | Puerto | Base de Datos (MySQL) | Stack Tecnológico Principal |
+|:---|:---|:---|:---:|:---:|:---|
+| **MS-01** | `ms-gateway` | `api-gateway/` | `:8080` | — | Spring Cloud Gateway · Reactive WebFlux · Redis Rate Limiter · Global JWT Filter |
+| **MS-02** | `ms-registry` | `registry/` | `:8761` | — | Spring Cloud Netflix Eureka Server · Service Discovery |
+| **MS-03** | `ms-auth` | `auth/` | `:8081` | `auth_db` | Spring Security · JJWT · BCrypt · Spring Data JPA · Flyway |
+| **MS-04** | `ms-player` | `player/` | `:8082` | `player_db` | Spring Data JPA · Redis Cache · OpenFeign · RabbitMQ · Flyway |
+| **MS-05** | `ms-matches` | `matches/` | `:8083` | `match_db` | Spring Data JPA · RabbitMQ AMQP · Flyway Migration |
+| **MS-06** | `ms-stats` | `stats/` | `:8084` | `stats_db` | Spring Batch · Redis Cache · CQRS · OpenFeign · RabbitMQ · Flyway |
+| **MS-07** | `ms-excel-parser` | `excel-parser/` | `:8085` | — | Apache POI (`poi-ooxml`) · Spring Web · RabbitMQ Publisher |
+| **MS-08** | `ms-notification` | `notification/` | `:8086` | `notification_db` | Spring WebSocket (STOMP) · JavaMailSender · Spring AMQP · Flyway |
 
+---
+
+## 🎯 3. Matriz de Trazabilidad de Requisitos
+
+### Requisitos Funcionales (RF)
+* **RF-01 · Registrar Usuarios (`ms-auth`)**: `POST /api/auth/register` - Valida formato de correo, verifica unicidad, aplica hashing BCrypt y almacena en `auth_db`.
+* **RF-02 · Ingresar Usuarios (`ms-auth`)**: `POST /api/auth/login` - Autenticación con verificación BCrypt y emisión de token JWT firmado.
+* **RF-03 · Ingresar Videojuego (`ms-player`)**: `POST /api/players/{userId}/games` - Valida nombre no vacío y asocia el videojuego al perfil del jugador.
+* **RF-04 · Carga Masiva de Estadísticas vía Excel (`ms-excel-parser` / `ms-matches`)**: `POST /api/excel/upload` - Ingesta de planillas `.xlsx` o `.csv` con Apache POI, cálculo de duraciones y emisión asíncrona a RabbitMQ.
+* **RF-05 · Visualizar Métricas y Promedios (`ms-stats`)**: `GET /api/stats/dashboard/{userId}` y `GET /api/stats/user/{userId}/game/{gameId}` - Panel con ratio V/D, horas acumuladas y KDA promedio con caché en Redis.
+* **RF-06 · Actualizar Estadísticas (`ms-matches` / `ms-stats`)**: `PUT /api/matches/{id}` y `POST /api/stats/recalculate/...` - Reemplaza valores y recalcula métricas.
+* **RF-07 · Eliminar Registro de Videojuego (`ms-player` / `ms-matches` / `ms-stats`)**: `DELETE /api/players/{userId}/games/{gameId}` - Borra la relación del juego y emite evento RabbitMQ `player.game.deleted` para purgar historial y estadísticas.
+
+### Requisitos No Funcionales (RNF)
+* **RNF-01 · Rendimiento**: Tiempos de respuesta inferiores a 2 segundos mediante caché distribuida Redis y procesamiento en lote Spring Batch.
+* **RNF-02 · Seguridad**: Hashing de contraseñas con BCrypt sin texto plano, tokens JWT RSA/HMAC y validación estricta de tipos MIME en subida de archivos.
+* **RNF-03 · Escalabilidad**: Arquitectura desacoplada en microservicios comunicados vía colas RabbitMQ y descubrimiento dinámico Eureka.
+* **RNF-04 · Disponibilidad**: Tolerancia a fallos con fallbacks declarativos Feign y health checks en todos los servicios.
+* **RNF-05 · Integridad de Datos**: Validación exhaustiva de cabeceras y celdas en hojas Excel/CSV; rechazo transaccional (`CorruptDataException`) en caso de datos inválidos.
+
+---
+
+## 🚀 4. Guía de Ejecución
+
+### Opción A: Despliegue Completo con Docker Compose
 ```bash
-cd statikk-v0.1
-mvn clean install
+# Construir e iniciar todos los servicios e infraestructura (MySQL, Redis, RabbitMQ, Mailhog)
+docker-compose up --build -d
 
-# Terminal 1
-cd ms-registry && mvn spring-boot:run
-
-# Terminal 2 (esperar a que el registry esté arriba)
-cd ms-gateway && mvn spring-boot:run
+# Verificar el estado de los contenedores
+docker-compose ps
 ```
 
-## Cómo verificar que funciona
-
-1. **Dashboard de Eureka**: abre `http://localhost:8761` — deberías ver el panel de Eureka (sin instancias registradas todavía, porque `ms-gateway` no se auto-registra como servicio de negocio, solo consulta el registry).
-2. **Salud del gateway**: `curl http://localhost:8080/actuator/health` → `{"status":"UP"}`.
-3. **Ruta protegida sin token** (debe fallar con 401, confirma que el filtro JWT funciona):
+### Opción B: Ejecución Local con Maven
+1. **Compilar proyecto padre y todos los módulos**:
    ```bash
-   curl -i http://localhost:8080/api/players/123
+   mvn clean install -DskipTests
    ```
-4. **Ruta pública** (no debería requerir token, aunque devuelva 503 porque `ms-excel-parser` no existe aún):
+2. **Ejecutar pruebas unitarias e integración de toda la suite**:
    ```bash
-   curl -i http://localhost:8080/api/excel/template
+   mvn test
    ```
 
-## v0.2 — ms-auth
-
-Agrega `ms-auth` (puerto 8081): registro/login con BCrypt y emisión de JWT, usando **el mismo** `jwt.secret` que ya tenía configurado `ms-gateway` desde v0.1.
-
-### Probarlo
-
-```bash
-docker compose up --build
-
-# 1. Registrar un usuario
-curl -s -X POST http://localhost:8080/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"username":"sergio","email":"sergio@statikk.gg","password":"supersecreta123"}' | jq
-
-# 2. Guarda el token que te devolvió, y pruébalo contra una ruta protegida
-curl -i http://localhost:8080/api/players/123 \
-  -H "Authorization: Bearer <TOKEN_DEL_PASO_1>"
-```
-
-Si entre el paso 1 y el paso 2 pasan más de un par de segundos, vas a ver que el gateway devuelve `401` con `X-Auth-Error: Token inválido o expirado` — **aunque el token se acaba de emitir**. Ese es el bug conocido de esta versión: revisa `JwtService.generateToken()`.
-
-## v0.3 — ms-player
-
-Agrega `ms-player` (puerto 8082): perfiles de jugador y videojuegos asociados.
-
-Novedades de esta versión:
-- **`ms-gateway` ahora propaga identidad**: tras validar el JWT, agrega los headers `X-User-Id`, `X-Username` y `X-User-Role` a la petición antes de reenviarla. `ms-player` confía en ellos en vez de volver a parsear el token. En rutas públicas, el gateway borra esos headers si el cliente intentó mandarlos por su cuenta (anti-suplantación).
-- **Caché Redis** en `GET /api/players/{id}`, invalidada en cada update/add-game/delete-game.
-- **RabbitMQ**: al borrar un videojuego se publica `player.game.deleted` en el exchange `statikk.events` (lo consumirá `ms-stats` en v0.6).
-
-### Probarlo de punta a punta
-
-```bash
-docker compose up --build
-
-# 1. Login (requiere el fix del JWT de v0.2 ya aplicado)
-TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"sergio@statikk.gg","password":"supersecreta123"}' | jq -r .token)
-
-# 2. Crear perfil de jugador (el userId lo pone el gateway, no tú)
-curl -s -X POST http://localhost:8080/api/players \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"displayName":"Sergio","country":"CL"}' | jq
-
-# 3. Agregar un videojuego (usa el "id" que devolvió el paso 2)
-curl -s -X POST http://localhost:8080/api/players/1/games \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"gameName":"League of Legends","platform":"PC","rankLabel":"Diamante","hoursPlayed":320}' | jq
-
-# 4. Confirmar que quedó en caché (revisa los logs: la segunda llamada no debería pegarle a MySQL)
-curl -s http://localhost:8080/api/players/1 | jq
-curl -s http://localhost:8080/api/players/1 | jq
-```
-
-Prueba también el caso prohibido: intenta mandar `X-User-Id: 999` manualmente en el header de una petición — el gateway lo va a pisar igual con tu userId real del token, así que no sirve para suplantar a otro usuario.
-
-## v0.4 — ms-matches
-
-Agrega `ms-matches` (puerto 8083): historial de partidas de cada jugador.
-
-Novedades de esta versión:
-- **Primera comunicación síncrona entre microservicios**: antes de guardar o borrar una partida, `ms-matches` le pregunta a `ms-player` (vía **Feign**, resuelto por Eureka) si el perfil existe y a quién pertenece, para evitar que alguien registre partidas en el perfil de otro.
-- **Tolerancia a fallos**: si `ms-player` responde 404 → `404` ("el perfil no existe"). Si `ms-player` está caído, lento o sin instancias en Eureka → `503` controlado, no un `500` genérico. Timeouts configurados: 2s de conexión, 3s de lectura.
-- **KDA calculado** en cada respuesta: `(kills + assists) / max(deaths, 1)`.
-- **Eventos RabbitMQ**: `match.created` y `match.deleted` en el exchange `statikk.events` (los consumirá `ms-stats` en v0.6).
-
-### Probarlo de punta a punta
-
-```bash
-docker compose up --build
-
-TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"sergio@statikk.gg","password":"supersecreta123"}' | jq -r .token)
-
-# 1. Registrar una partida (playerProfileId = el id de tu perfil creado en v0.3)
-curl -s -X POST http://localhost:8080/api/matches \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"playerProfileId":1,"gameName":"League of Legends","result":"WIN","durationMinutes":32,"kills":9,"deaths":3,"assists":12}' | jq
-
-# 2. Listar el historial del jugador
-curl -s "http://localhost:8080/api/matches?playerProfileId=1" -H "Authorization: Bearer $TOKEN" | jq
-
-# 3. Prueba de tolerancia a fallos: apaga ms-player y repite el paso 1
-docker compose stop ms-player
-curl -i -X POST http://localhost:8080/api/matches \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"playerProfileId":1,"gameName":"League of Legends","result":"LOSS","kills":2,"deaths":7,"assists":4}'
-# → 503 "ms-player no respondió al validar el perfil 1..."
-
-# 4. Vuélvelo a levantar
-docker compose start ms-player
-```
-
-También puedes probar el caso de propiedad: crea un segundo usuario, e intenta registrar una partida con el `playerProfileId` del primero → `403`.
-
-## v0.5 — ms-excel-parser
-
-Agrega `ms-excel-parser` (puerto 8085): carga masiva de partidas desde `.xlsx` o `.csv`.
-
-Cómo funciona:
-1. `GET /api/excel/template` (pública) descarga la plantilla `.xlsx`, con lista desplegable en `result` y una hoja de instrucciones.
-2. `POST /api/excel/matches/import?playerProfileId=N` (multipart, campo `file`) valida el archivo y responde **`202 Accepted`**: la inserción es asíncrona.
-3. El parser publica `excel.matches.imported` en RabbitMQ; **`ms-matches`** (nuevo consumidor) inserta las partidas y publica `match.bulk.imported` para `ms-stats` (v0.6).
-
-Decisiones de diseño:
-- **Todo o nada**: si UNA fila es inválida, no se importa ninguna y la respuesta es `422` con el detalle de cada error (fila, columna, motivo; máx. 50 listados).
-- **Seguridad**: se valida por Feign que el `playerProfileId` pertenezca al usuario del token (si no, `403`). Extensión y Content-Type se validan; el contenido real se valida al abrir el archivo.
-- **CSV de Excel en español**: se detecta automáticamente el separador `;` y el BOM UTF-8.
-- **Idempotencia**: RabbitMQ puede entregar un mensaje dos veces. `ms-matches` guarda el `importId` en `processed_imports` y ignora los duplicados.
-- **Sin mensajes envenenados**: el listener reintenta 3 veces y luego descarta (no reencola infinitamente).
-- Límites: 5 MB por archivo, 5000 partidas por archivo, y rate limit de 2 req/s (ráfaga 5) en `/api/excel/**` desde el gateway.
-
-### Probarlo
-
-```bash
-docker compose up --build
-
-TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"sergio@statikk.gg","password":"supersecreta123"}' | jq -r .token)
-
-# 1. Descargar la plantilla (no requiere token)
-curl -o plantilla.xlsx http://localhost:8080/api/excel/template
-
-# 2. Importar el CSV de ejemplo (5 partidas)
-curl -s -X POST "http://localhost:8080/api/excel/matches/import?playerProfileId=1" \
-  -H "Authorization: Bearer $TOKEN" \
-  -F "file=@samples/partidas-ejemplo.csv;type=text/csv" | jq
-# -> 202 {"importId":"...","rowsAccepted":5,"status":"QUEUED",...}
-
-# 3. Esperar 1-2 segundos y revisar el historial (deberían aparecer las 5)
-curl -s "http://localhost:8080/api/matches?playerProfileId=1" -H "Authorization: Bearer $TOKEN" | jq length
-
-# 4. Archivo con errores -> 422 con detalle por fila, y NO se importa nada
-curl -s -X POST "http://localhost:8080/api/excel/matches/import?playerProfileId=1" \
-  -H "Authorization: Bearer $TOKEN" \
-  -F "file=@samples/partidas-con-errores.csv;type=text/csv" | jq
-
-# 5. Tipo no permitido -> 415
-echo "hola" > malo.txt
-curl -s -X POST "http://localhost:8080/api/excel/matches/import?playerProfileId=1" \
-  -H "Authorization: Bearer $TOKEN" -F "file=@malo.txt" | jq
-```
-
-Revisa también el panel de RabbitMQ (`http://localhost:15672`, usuario `statikk` / `statikk`): la cola `ms-matches.excel-imports` debe quedar en 0 mensajes.
-
-## v0.6 — ms-stats
-
-Agrega `ms-stats` (puerto 8084): métricas agregadas por jugador (ratio V/D, KDA, horas jugadas), globales y por videojuego.
-
-Arquitectura (CQRS + batch):
-```
-ms-matches ──match.created / match.deleted / match.bulk.imported / match.bulk.deleted──▶ cola ms-stats.match-events
-                                                                                              │
-                                  COMANDOS: el listener solo marca al jugador como "pendiente" ▼
-                                            (tabla stats_pending_recalc, una fila por jugador)
-                                                                                              │
-                          cada 10 s, si hay pendientes: JOB SPRING BATCH (chunks de 20 jugadores)
-                            reader    -> lee los pendientes
-                            processor -> pide las partidas a ms-matches (Feign) y agrega por juego
-                            writer    -> reemplaza player_game_stats, invalida Redis, publica stats.calculated
-                                                                                              │
-                          CONSULTAS: GET /api/stats/players/{id} lee player_game_stats (con caché Redis)
-```
-
-Decisiones de diseño:
-- **Los eventos son mínimos**: a `ms-stats` solo le importa *qué jugador* cambió. Las partidas se vuelven a leer de `ms-matches` (fuente de verdad), así el cálculo es idempotente: recalcular dos veces da lo mismo.
-- **Un recálculo por jugador, no por evento**: importar 5000 partidas marca al jugador una vez y se recalcula una vez.
-- **Sin avisos perdidos**: el marcador lleva una `version`. Si llega un evento mientras se calcula, el marcador no se borra y el jugador se recalcula en la pasada siguiente.
-- **Tolerancia a fallos**: si `ms-matches` no responde, ese jugador queda pendiente y se reintenta solo; el resto del lote no se afecta.
-- **Consistencia eventual**: los números tardan hasta ~10-25 s en reflejar un cambio (ajustable con `STATS_BATCH_INTERVAL_MS`).
-- **Borrado en cascada**: si quitas un videojuego de tu perfil (`DELETE /api/players/{id}/games/{gameId}`), `ms-matches` ahora también borra tus partidas de ese juego y avisa con `match.bulk.deleted`; recién ahí `ms-stats` recalcula. (Por eso `ms-stats` no escucha `player.game.deleted` directamente: podría recalcular antes de que se borren las partidas.)
-- **Fórmulas**: `winRate = victorias/partidas·100`; `winLossRatio = victorias/max(derrotas,1)`; `kda = (kills+assists)/max(muertes,1)`, calculado sobre los *totales*; `hoursPlayed = minutos/60`. Las horas salen de la duración de las partidas, no de las horas que declaras a mano en el perfil.
-- Publica `stats.calculated` (lo consumirá `ms-notification` en v0.7).
-
-### Corrección en ms-player (v0.3)
-La caché Redis de `ms-player` usaba un serializer genérico con un `ObjectMapper` propio sin información de tipos: la **segunda** lectura de un perfil cacheado habría fallado con `ClassCastException` (el valor volvía como `LinkedHashMap`). Ahora usa un serializer tipado. Mismo patrón en `ms-stats`.
-
-### Probarlo
-
-```bash
-docker compose up --build
-
-TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"sergio@statikk.gg","password":"supersecreta123"}' | jq -r .token)
-
-# 1. Importar el CSV de ejemplo (v0.5) en un perfil NUEVO, sin otras partidas
-curl -s -X POST "http://localhost:8080/api/excel/matches/import?playerProfileId=1" \
-  -H "Authorization: Bearer $TOKEN" -F "file=@samples/partidas-ejemplo.csv;type=text/csv" | jq
-
-# 2. Esperar ~25 segundos y pedir el dashboard
-sleep 25
-curl -s http://localhost:8080/api/stats/players/1 -H "Authorization: Bearer $TOKEN" | jq
-```
-
-Resultado esperado con solo ese CSV:
-
-| | partidas | V/D/E | winRate | W/L | KDA | horas |
-|---|---|---|---|---|---|---|
-| **Global** | 5 | 3/1/1 | 60.0 | 3.0 | 2.38 | 2.77 |
-| League of Legends | 3 | 2/1/0 | 66.67 | 2.0 | 3.92 | 1.5 |
-| Valorant | 2 | 1/0/1 | 50.0 | 1.0 | 1.69 | 1.27 |
-
-```bash
-# 3. Cache: repite el GET anterior dos veces seguidas; la segunda sale de Redis (y ya no falla)
-
-# 4. Cascada: quita Valorant de tu perfil (agrégalo antes con POST /api/players/1/games si no lo tienes)
-curl -i -X DELETE http://localhost:8080/api/players/1/games/<ID_DEL_JUEGO> -H "Authorization: Bearer $TOKEN"
-sleep 25
-curl -s "http://localhost:8080/api/matches?playerProfileId=1" -H "Authorization: Bearer $TOKEN" | jq length   # solo quedan las de otros juegos
-curl -s http://localhost:8080/api/stats/players/1 -H "Authorization: Bearer $TOKEN" | jq '.games[].gameName'  # Valorant ya no aparece
-```
-
-Para ver el job en acción: `docker compose logs -f ms-stats`.
-
-## v0.7 — ms-notification
-
-Agrega `ms-notification` (puerto 8086): avisa al jugador cuando sus estadísticas cambian, en tiempo real por WebSocket y, opcionalmente, por correo.
-
-```
-ms-stats ──stats.calculated──▶ cola ms-notification.stats-events
-                                      │
-   1. Feign a ms-player: perfil -> usuario dueño (el evento trae el id del PERFIL, hay que notificar al USUARIO)
-   2. ¿Cambió algo desde la última vez?  No -> no se notifica (evita ruido). Sí ->
-   3. Guarda la notificación en MySQL (siempre)
-   4. WebSocket: /user/queue/notifications   +   Correo (solo si el usuario lo activó)
-```
-
-Qué hace:
-- **Tiempo real**: STOMP sobre WebSocket nativo. El mensaje llega solo al usuario dueño (`convertAndSendToUser`), con mensajes como `"7 partidas (+2), victorias 57.1% (-2.9), KDA 2.10 (-0.28)."`. No se notifica si las métricas no cambiaron.
-- **Historial por REST**: las notificaciones quedan guardadas, así que un usuario desconectado las ve después.
-- **Correo opt-in**: nadie recibe correos hasta activarlo en `PUT /api/notifications/preferences`. En desarrollo los correos los captura **Mailpit** (bandeja en http://localhost:8025), no salen a Internet.
-
-Endpoints (todos con JWT; el usuario sale del token, nunca de la URL):
-
-| Método | Ruta | Descripción |
-|---|---|---|
-| GET | `/api/notifications?unreadOnly=false&limit=20` | Mis notificaciones, la más nueva primero (máx. 100) |
-| GET | `/api/notifications/unread-count` | Cuántas tengo sin leer |
-| PUT | `/api/notifications/{id}/read` | Marcar una como leída (404 si no es mía) |
-| POST | `/api/notifications/read-all` | Marcar todas como leídas |
-| GET/PUT | `/api/notifications/preferences` | Ver/cambiar `{"emailEnabled": true, "email": "..."}` |
-| WS | `ws://localhost:8080/ws/notifications?access_token=<JWT>` | Conexión en tiempo real |
-
-### Cambios en el gateway
-
-- **Autenticación del WebSocket**: los navegadores no permiten enviar headers en el handshake, así que en rutas `/ws/**` el gateway acepta el JWT como `?access_token=` (además del header `Authorization`) y **lo elimina de la URL antes de reenviar** al servicio. Compromiso conocido: un token en la URL puede quedar en logs de proxies/navegador; por eso solo se acepta en `/ws/**`. Además, el token se valida **solo al conectar**: una conexión ya abierta sigue viva aunque el token expire después.
-- **Nueva ruta** `lb:ws://ms-notification` con rate limit de 5 conexiones/s por IP.
-- **Corrección de seguridad**: desactivé `discovery.locator`, que desde v0.1 creaba rutas automáticas `/<servicio>/**` (ej. `/ms-player/api/players/1`) para todo lo registrado en Eureka. Esas rutas **se saltaban el rate limiting** de las rutas explícitas y exponían cualquier endpoint de cualquier servicio. Todas las rutas necesarias ya estaban declaradas, así que no cambia nada de lo documentado.
-
-### Seguridad del WebSocket
-- El handshake exige el header `X-User-Id` que solo el gateway pone (si alguien llega directo al servicio, 401).
-- Un cliente solo puede suscribirse a `/user/queue/**` (su cola personal) y **no puede enviar** mensajes; cualquier otra cosa corta la conexión con un frame ERROR.
-
-### Probarlo
-
-```bash
-docker compose up --build
-
-TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"sergio@statikk.gg","password":"supersecreta123"}' | jq -r .token)
-
-# 1. Activa el correo (opt-in)
-curl -s -X PUT http://localhost:8080/api/notifications/preferences \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"emailEnabled":true,"email":"sergio@statikk.gg"}' | jq
-
-# 2. Abre samples/ws-client.html en el navegador, pega el token y pulsa "Conectar"
-
-# 3. Importa el CSV de ejemplo en un perfil nuevo (v0.5) y espera ~25 s
-curl -s -X POST "http://localhost:8080/api/excel/matches/import?playerProfileId=1" \
-  -H "Authorization: Bearer $TOKEN" -F "file=@samples/partidas-ejemplo.csv;type=text/csv" | jq
-```
-En ~25 s deberías ver, **en la página** y **en Mailpit (http://localhost:8025)**:
-`Estadísticas calculadas — Ya tienes estadísticas: 5 partidas, 60.0% de victorias, KDA 2.38.`
-
-```bash
-# 4. Registra UNA partida más y mira cómo llega la VARIACIÓN
-curl -s -X POST http://localhost:8080/api/matches \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"playerProfileId":1,"gameName":"League of Legends","result":"LOSS","kills":2,"deaths":7,"assists":4}' | jq
-# ~25 s después:  "6 partidas (+1), victorias 50.0% (-10.0), KDA 2.16 (-0.22)."
-
-# 5. Historial por REST (funciona aunque no estuvieras conectado)
-curl -s http://localhost:8080/api/notifications -H "Authorization: Bearer $TOKEN" | jq
-curl -s http://localhost:8080/api/notifications/unread-count -H "Authorization: Bearer $TOKEN" | jq
-curl -s -X PUT http://localhost:8080/api/notifications/1/read -H "Authorization: Bearer $TOKEN" | jq
-curl -s -X POST http://localhost:8080/api/notifications/read-all -H "Authorization: Bearer $TOKEN" | jq
-
-# 6. Seguridad: sin token el handshake se rechaza
-curl -i "http://localhost:8080/ws/notifications"          # 401 "Falta el token..."
-```
-
-### Limitaciones conocidas
-- **Una sola instancia**: usa el broker STOMP en memoria. Para escalar a varias instancias habría que pasar a un broker externo (`enableStompBrokerRelay` con el plugin STOMP de RabbitMQ).
-- **Mejor esfuerzo**: si `ms-player` falla, el mensaje se reintenta 3 veces y luego se descarta (las estadísticas siguen disponibles en `ms-stats`). El correo no se reintenta.
-- **Correo sin verificar**: la dirección que el usuario indica no se confirma (no hay enlace de verificación), por eso es opt-in y de bajo volumen.
-
-## Qué sigue (v1.0)
-
-Integración final: script de prueba de humo de punta a punta (`scripts/smoke-test.sh`: registro → perfil → importación → estadísticas → notificación), healthchecks para todos los servicios en el compose, y documentación consolidada.
+---
+
+## 📡 5. Colección de Endpoints Principales (API Gateway :8080)
+
+### Autenticación (`/api/auth`)
+* `POST /api/auth/register` - Registro de usuario (RF-01)
+* `POST /api/auth/login` - Login y obtención de JWT (RF-02)
+* `POST /api/auth/validate` - Validación de token JWT
+
+### Jugadores y Videojuegos (`/api/players`)
+* `POST /api/players/profile` - Crear/actualizar perfil
+* `GET /api/players/{userId}` - Obtener perfil del jugador
+* `POST /api/players/{userId}/games` - Asociar videojuego (RF-03)
+* `GET /api/players/{userId}/games` - Listar videojuegos asociados
+* `DELETE /api/players/{userId}/games/{gameId}` - Eliminar videojuego e historial (RF-07)
+
+### Partidas e Historial (`/api/matches`)
+* `POST /api/matches` - Crear partida manual
+* `GET /api/matches/user/{userId}/game/{gameId}` - Listar partidas por juego
+* `PUT /api/matches/{id}` - Actualizar partida (RF-06)
+* `DELETE /api/matches/{id}` - Eliminar partida
+
+### Estadísticas y Métricas (`/api/stats`)
+* `GET /api/stats/dashboard/{userId}` - Panel centralizado de métricas y promedios (RF-05)
+* `GET /api/stats/user/{userId}/game/{gameId}` - Métricas específicas de un juego (RF-05)
+* `POST /api/stats/recalculate/user/{userId}/game/{gameId}` - Forzar recálculo (RF-06)
+* `POST /api/stats/batch/run` - Ejecutar Job de agregación masiva con Spring Batch
+
+### Ingesta Excel / CSV (`/api/excel`)
+* `POST /api/excel/upload` - Carga masiva de planilla `.xlsx` / `.csv` (RF-04)
+* `GET /api/excel/template` - Descargar plantilla oficial `.xlsx`
+
+### Notificaciones y WebSocket (`/api/notifications`)
+* `GET /api/notifications/user/{userId}` - Historial de alertas
+* `PUT /api/notifications/{id}/read` - Marcar como leída
+* `WS /ws` - Endpoint WebSocket STOMP (`/topic/notifications/{userId}`)

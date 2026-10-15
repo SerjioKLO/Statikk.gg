@@ -1,292 +1,249 @@
-services:
-  redis:
-    image: redis:7-alpine
-    container_name: statikk-redis
-    ports:
-      - "6379:6379"
+version: '3.8'
 
-  ms-registry:
-    build: ./ms-registry
-    container_name: ms-registry
+services:
+  # ==========================================
+  # Infrastructure Middleware
+  # ==========================================
+  mysql:
+    image: mysql:8.0
+    container_name: statikk-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
     ports:
-      - "8761:8761"
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8761/actuator/health"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - statikk-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: statikk-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - statikk-network
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: statikk-rabbitmq
+    restart: always
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - statikk-network
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: statikk-mailhog
+    ports:
+      - "1025:1025" # SMTP
+      - "8025:8025" # Web UI
+    networks:
+      - statikk-network
+
+  # ==========================================
+  # Core Platform Microservices
+  # ==========================================
+  ms-registry:
+    build:
+      context: ./registry
+      dockerfile: Dockerfile
+    container_name: ms-registry
+    ports:
+      - "8761:8761"
+    environment:
+      SERVER_PORT: 8761
+    networks:
+      - statikk-network
 
   ms-gateway:
-    build: ./ms-gateway
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
     container_name: ms-gateway
     ports:
       - "8080:8080"
     environment:
-      EUREKA_URL: http://ms-registry:8761/eureka/
+      SERVER_PORT: 8080
+      EUREKA_URI: http://ms-registry:8761/eureka/
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      JWT_SECRET: statikk-dev-secret-change-me-32chars-min
     depends_on:
-      redis:
-        condition: service_started
-      ms-registry:
-        condition: service_healthy
-
-  mysql-auth:
-    image: mysql:8.4
-    container_name: mysql-auth
-    environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: statikk_auth
-    ports:
-      - "3306:3306"
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - ms-registry
+      - redis
+    networks:
+      - statikk-network
 
   ms-auth:
-    build: ./ms-auth
+    build:
+      context: ./auth
+      dockerfile: Dockerfile
     container_name: ms-auth
     ports:
       - "8081:8081"
     environment:
-      EUREKA_URL: http://ms-registry:8761/eureka/
-      DB_HOST: mysql-auth
-      DB_PORT: 3306
-      DB_NAME: statikk_auth
-      DB_USER: root
-      DB_PASSWORD: root
-      JWT_SECRET: statikk-dev-secret-change-me-32chars-min
-      JWT_EXPIRATION_MINUTES: 60
+      SERVER_PORT: 8081
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      EUREKA_URI: http://ms-registry:8761/eureka/
     depends_on:
+      mysql:
+        condition: service_healthy
       ms-registry:
-        condition: service_healthy
-      mysql-auth:
-        condition: service_healthy
-
-  rabbitmq:
-    image: rabbitmq:3.13-management-alpine
-    container_name: statikk-rabbitmq
-    environment:
-      # OJO: con el usuario "guest" por defecto, RabbitMQ solo permite
-      # conexiones AMQP desde localhost (loopback_users). Como ms-player
-      # se conecta desde otro contenedor, usamos un usuario propio.
-      RABBITMQ_DEFAULT_USER: statikk
-      RABBITMQ_DEFAULT_PASS: statikk
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  mysql-player:
-    image: mysql:8.4
-    container_name: mysql-player
-    environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: statikk_player
-    ports:
-      - "3307:3306"
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+        condition: service_started
+    networks:
+      - statikk-network
 
   ms-player:
-    build: ./ms-player
+    build:
+      context: ./player
+      dockerfile: Dockerfile
     container_name: ms-player
     ports:
       - "8082:8082"
     environment:
-      EUREKA_URL: http://ms-registry:8761/eureka/
-      DB_HOST: mysql-player
-      DB_PORT: 3306
-      DB_NAME: statikk_player
-      DB_USER: root
-      DB_PASSWORD: root
+      SERVER_PORT: 8082
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
       REDIS_HOST: redis
       REDIS_PORT: 6379
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
-      RABBITMQ_USER: statikk
-      RABBITMQ_PASSWORD: statikk
+      EUREKA_URI: http://ms-registry:8761/eureka/
     depends_on:
-      ms-registry:
+      mysql:
         condition: service_healthy
-      mysql-player:
+      rabbitmq:
         condition: service_healthy
       redis:
         condition: service_started
-      rabbitmq:
-        condition: service_healthy
-
-  mysql-matches:
-    image: mysql:8.4
-    container_name: mysql-matches
-    environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: statikk_matches
-    ports:
-      - "3308:3306"
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      ms-registry:
+        condition: service_started
+    networks:
+      - statikk-network
 
   ms-matches:
-    build: ./ms-matches
+    build:
+      context: ./matches
+      dockerfile: Dockerfile
     container_name: ms-matches
     ports:
       - "8083:8083"
     environment:
-      EUREKA_URL: http://ms-registry:8761/eureka/
-      DB_HOST: mysql-matches
-      DB_PORT: 3306
-      DB_NAME: statikk_matches
-      DB_USER: root
-      DB_PASSWORD: root
+      SERVER_PORT: 8083
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
-      RABBITMQ_USER: statikk
-      RABBITMQ_PASSWORD: statikk
+      EUREKA_URI: http://ms-registry:8761/eureka/
     depends_on:
-      ms-registry:
-        condition: service_healthy
-      mysql-matches:
+      mysql:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-      ms-player:
-        condition: service_started
-
-  ms-excel-parser:
-    build: ./ms-excel-parser
-    container_name: ms-excel-parser
-    ports:
-      - "8085:8085"
-    environment:
-      EUREKA_URL: http://ms-registry:8761/eureka/
-      RABBITMQ_HOST: rabbitmq
-      RABBITMQ_PORT: 5672
-      RABBITMQ_USER: statikk
-      RABBITMQ_PASSWORD: statikk
-    depends_on:
       ms-registry:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-      ms-player:
         condition: service_started
-      # ms-matches declara la cola "ms-matches.excel-imports"; si el parser publica antes
-      # de que exista, RabbitMQ descarta el mensaje (no hay ninguna cola enlazada todavía).
-      ms-matches:
-        condition: service_started
-
-  mysql-stats:
-    image: mysql:8.4
-    container_name: mysql-stats
-    environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: statikk_stats
-    ports:
-      - "3309:3306"
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    networks:
+      - statikk-network
 
   ms-stats:
-    build: ./ms-stats
+    build:
+      context: ./stats
+      dockerfile: Dockerfile
     container_name: ms-stats
     ports:
       - "8084:8084"
     environment:
-      EUREKA_URL: http://ms-registry:8761/eureka/
-      DB_HOST: mysql-stats
-      DB_PORT: 3306
-      DB_NAME: statikk_stats
-      DB_USER: root
-      DB_PASSWORD: root
+      SERVER_PORT: 8084
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
       REDIS_HOST: redis
       REDIS_PORT: 6379
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
-      RABBITMQ_USER: statikk
-      RABBITMQ_PASSWORD: statikk
-      STATS_BATCH_INTERVAL_MS: 10000
+      EUREKA_URI: http://ms-registry:8761/eureka/
     depends_on:
-      ms-registry:
+      mysql:
         condition: service_healthy
-      mysql-stats:
+      rabbitmq:
         condition: service_healthy
       redis:
         condition: service_started
+      ms-registry:
+        condition: service_started
+    networks:
+      - statikk-network
+
+  ms-excel-parser:
+    build:
+      context: ./excel-parser
+      dockerfile: Dockerfile
+    container_name: ms-excel-parser
+    ports:
+      - "8085:8085"
+    environment:
+      SERVER_PORT: 8085
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      EUREKA_URI: http://ms-registry:8761/eureka/
+    depends_on:
       rabbitmq:
         condition: service_healthy
-      ms-matches:
+      ms-registry:
         condition: service_started
-      # ms-notification declara la cola "ms-notification.stats-events"; si ms-stats publica antes de que
-      # exista, RabbitMQ descarta el mensaje (no hay ninguna cola enlazada todavía).
-      ms-notification:
-        condition: service_started
-
-  # Servidor SMTP de pruebas: captura los correos en vez de enviarlos. Bandeja web en http://localhost:8025
-  mailpit:
-    image: axllent/mailpit:latest
-    container_name: statikk-mailpit
-    ports:
-      - "1025:1025"
-      - "8025:8025"
-
-  mysql-notification:
-    image: mysql:8.4
-    container_name: mysql-notification
-    environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: statikk_notification
-    ports:
-      - "3310:3306"
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    networks:
+      - statikk-network
 
   ms-notification:
-    build: ./ms-notification
+    build:
+      context: ./notification
+      dockerfile: Dockerfile
     container_name: ms-notification
     ports:
       - "8086:8086"
     environment:
-      EUREKA_URL: http://ms-registry:8761/eureka/
-      DB_HOST: mysql-notification
-      DB_PORT: 3306
-      DB_NAME: statikk_notification
-      DB_USER: root
-      DB_PASSWORD: root
+      SERVER_PORT: 8086
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MAIL_HOST: mailhog
+      MAIL_PORT: 1025
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
-      RABBITMQ_USER: statikk
-      RABBITMQ_PASSWORD: statikk
-      MAIL_ENABLED: "true"
-      MAIL_HOST: mailpit
-      MAIL_PORT: 1025
+      EUREKA_URI: http://ms-registry:8761/eureka/
     depends_on:
-      ms-registry:
-        condition: service_healthy
-      mysql-notification:
+      mysql:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-      ms-player:
+      ms-registry:
         condition: service_started
-      mailpit:
-        condition: service_started
+    networks:
+      - statikk-network
+
+volumes:
+  mysql_data:
+  redis_data:
+
+networks:
+  statikk-network:
+    driver: bridge
