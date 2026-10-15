@@ -11,7 +11,7 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: root
     ports:
-      - "3306:3306"
+      - "3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
       - ./init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql
@@ -66,8 +66,8 @@ services:
   # ==========================================
   ms-registry:
     build:
-      context: ./registry
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: registry/Dockerfile
     container_name: ms-registry
     ports:
       - "8761:8761"
@@ -78,8 +78,8 @@ services:
 
   ms-gateway:
     build:
-      context: ./api-gateway
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: api-gateway/Dockerfile
     container_name: ms-gateway
     ports:
       - "8080:8080"
@@ -96,8 +96,8 @@ services:
 
   ms-auth:
     build:
-      context: ./auth
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: auth/Dockerfile
     container_name: ms-auth
     ports:
       - "8081:8081"
@@ -116,8 +116,8 @@ services:
 
   ms-player:
     build:
-      context: ./player
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: player/Dockerfile
     container_name: ms-player
     ports:
       - "8082:8082"
@@ -144,8 +144,8 @@ services:
 
   ms-matches:
     build:
-      context: ./matches
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: matches/Dockerfile
     container_name: ms-matches
     ports:
       - "8083:8083"
@@ -168,8 +168,8 @@ services:
 
   ms-stats:
     build:
-      context: ./stats
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: stats/Dockerfile
     container_name: ms-stats
     ports:
       - "8084:8084"
@@ -196,8 +196,8 @@ services:
 
   ms-excel-parser:
     build:
-      context: ./excel-parser
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: excel-parser/Dockerfile
     container_name: ms-excel-parser
     ports:
       - "8085:8085"
@@ -216,8 +216,8 @@ services:
 
   ms-notification:
     build:
-      context: ./notification
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: notification/Dockerfile
     container_name: ms-notification
     ports:
       - "8086:8086"
