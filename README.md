@@ -9,7 +9,7 @@ Plataforma distribuida de alto rendimiento basada en microservicios para el regi
 
 ---
 
-## 🏛️ 1. Arquitectura del Sistema
+##  1. Arquitectura del Sistema
 
 ```
                         [ Cliente Web / Móvil ]
@@ -42,7 +42,7 @@ Plataforma distribuida de alto rendimiento basada en microservicios para el regi
 
 ---
 
-## 📦 2. Catálogo de Microservicios y Stack Tecnológico
+##  2. Catálogo de Microservicios y Stack Tecnológico
 
 | ID | Microservicio | Directorio | Puerto | Base de Datos (MySQL) | Stack Tecnológico Principal |
 |:---|:---|:---|:---:|:---:|:---|
@@ -57,7 +57,7 @@ Plataforma distribuida de alto rendimiento basada en microservicios para el regi
 
 ---
 
-## 🎯 3. Matriz de Trazabilidad de Requisitos
+##  3. Matriz de Trazabilidad de Requisitos
 
 ### Requisitos Funcionales (RF)
 * **RF-01 · Registrar Usuarios (`ms-auth`)**: `POST /api/auth/register` - Valida formato de correo, verifica unicidad, aplica hashing BCrypt y almacena en `auth_db`.
@@ -77,7 +77,7 @@ Plataforma distribuida de alto rendimiento basada en microservicios para el regi
 
 ---
 
-## 🚀 4. Guía de Ejecución
+##  4. Guía de Ejecución
 
 ### Opción A: Despliegue Completo con Docker Compose
 ```bash
@@ -100,7 +100,7 @@ docker-compose ps
 
 ---
 
-## 📡 5. Colección de Endpoints Principales (API Gateway :8080)
+##  5. Colección de Endpoints Principales (API Gateway :8080)
 
 ### Autenticación (`/api/auth`)
 * `POST /api/auth/register` - Registro de usuario (RF-01)
