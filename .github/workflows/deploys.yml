@@ -2,7 +2,8 @@ name: CI/CD Microservices ECR y SSM
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
   workflow_dispatch:
 
 env:
@@ -10,27 +11,34 @@ env:
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
-  # ETAPA 1 a 4: Build, tag con SHA del commit y push a Amazon ECR
   build-and-push:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         service:
-          - { repo: "ms-registry",     dir: "registry" }
-          - { repo: "ms-gateway",      dir: "gateway" }
-          - { repo: "ms-auth",         dir: "auth" }
-          - { repo: "ms-player",       dir: "player" }
-          - { repo: "ms-matches",      dir: "matches" }
-          - { repo: "ms-stats",        dir: "stats" }
-          - { repo: "ms-excel-parser", dir: "excel-parser" }
-          - { repo: "ms-notification", dir: "notification" }
+          - repo: ms-registry
+            dir: registry
+          - repo: ms-gateway
+            dir: gateway
+          - repo: ms-auth
+            dir: auth
+          - repo: ms-player
+            dir: player
+          - repo: ms-matches
+            dir: matches
+          - repo: ms-stats
+            dir: stats
+          - repo: ms-excel-parser
+            dir: excel-parser
+          - repo: ms-notification
+            dir: notification
 
     steps:
-      - name: 1. Checkout
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 2. Configure AWS credentials
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -38,30 +46,32 @@ jobs:
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: 3. Login en ECR
+      - name: Login en ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: 4. Build y push con SHA
+      - name: Build y push con SHA
         env:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           REPO: ${{ matrix.service.repo }}
         run: |
           IMAGE="$REGISTRY/$REPO:$IMAGE_TAG"
-          docker build -t "$IMAGE" -f ${{ matrix.service.dir }}/Dockerfile .
+          docker build -t "$IMAGE" -f "${{ matrix.service.dir }}/Dockerfile" .
           docker push "$IMAGE"
 
-  # ETAPA 5: Despliegue automatizado vía AWS SSM en las 3 EC2 (sin SSH)
   deploy-ssm:
     needs: build-and-push
     runs-on: ubuntu-latest
     strategy:
-      max-parallel: 1 # Orden estricto: 1° EC2 Core (Eureka/DB), 2° EC2 Domain, 3° EC2 Workers
+      max-parallel: 1
       matrix:
         instance:
-          - { name: "EC2-1-Core",    id: "${{ secrets.INSTANCE_ID_NODE1 }}" }
-          - { name: "EC2-2-Domain",  id: "${{ secrets.INSTANCE_ID_NODE2 }}" }
-          - { name: "EC2-3-Workers", id: "${{ secrets.INSTANCE_ID_NODE3 }}" }
+          - name: EC2-1-Core
+            id: ${{ secrets.INSTANCE_ID_NODE1 }}
+          - name: EC2-2-Domain
+            id: ${{ secrets.INSTANCE_ID_NODE2 }}
+          - name: EC2-3-Workers
+            id: ${{ secrets.INSTANCE_ID_NODE3 }}
 
     steps:
       - name: Configure AWS credentials
@@ -72,23 +82,16 @@ jobs:
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login en ECR para obtener Registry URL
+      - name: Login en ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: 5. Deploy via SSM (con tag SHA exacto)
+      - name: Deploy via SSM
         env:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          INSTANCE_ID: ${{ matrix.instance.id }}
         run: |
           aws ssm send-command \
-            --instance-ids "${{ matrix.instance.id }}" \
+            --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
-            --parameters "commands=[
-              \"set -e\",
-              \"cd /home/ubuntu/app\",
-              \"aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $REGISTRY\",
-              \"export ECR_REGISTRY=$REGISTRY\",
-              \"export IMAGE_TAG=$IMAGE_TAG\",
-              \"docker compose pull\",
-              \"docker compose up -d --remove-orphans\"
-            ]"
+            --parameters 'commands=["set -e","cd /home/ubuntu/app","aws ecr get-login-password --region '"$AWS_REGION"' | docker login --username AWS --password-stdin '"$REGISTRY"'","export ECR_REGISTRY='"$REGISTRY"'","export IMAGE_TAG='"$IMAGE_TAG"'","docker compose pull","docker compose up -d --remove-orphans"]'
