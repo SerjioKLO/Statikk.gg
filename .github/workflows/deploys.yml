@@ -20,7 +20,7 @@ jobs:
           - repo: ms-registry
             dir: registry
           - repo: ms-gateway
-            dir: gateway
+            dir: api-gateway
           - repo: ms-auth
             dir: auth
           - repo: ms-player
