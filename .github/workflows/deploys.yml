@@ -90,9 +90,8 @@ jobs:
         env:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           INSTANCE_ID: ${{ secrets[matrix.instance.secret_name] }}
-          ECR_PASS: ${{ steps.login-ecr.outputs[format('docker_password_{0}', steps.login-ecr.outputs.registry)] }}
         run: |
           aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["set -e","cd /home/ubuntu/app","echo '"$ECR_PASS"' | docker login --username AWS --password-stdin '"$REGISTRY"'","export ECR_REGISTRY='"$REGISTRY"'","export IMAGE_TAG='"$IMAGE_TAG"'","docker compose pull","docker compose up -d --remove-orphans"]'
+            --parameters 'commands=["set -e","cd /home/ubuntu/app","aws ecr get-login-password --region '"$AWS_REGION"' | docker login --username AWS --password-stdin '"$REGISTRY"'","export ECR_REGISTRY='"$REGISTRY"'","export IMAGE_TAG='"$IMAGE_TAG"'","docker compose pull","docker compose up -d --remove-orphans"]'
