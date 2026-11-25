@@ -67,11 +67,11 @@ jobs:
       matrix:
         instance:
           - name: EC2-1-Core
-            id: ${{ secrets.INSTANCE_ID_NODE1 }}
+            secret_name: INSTANCE_ID_NODE1
           - name: EC2-2-Domain
-            id: ${{ secrets.INSTANCE_ID_NODE2 }}
+            secret_name: INSTANCE_ID_NODE2
           - name: EC2-3-Workers
-            id: ${{ secrets.INSTANCE_ID_NODE3 }}
+            secret_name: INSTANCE_ID_NODE3
 
     steps:
       - name: Configure AWS credentials
@@ -89,7 +89,7 @@ jobs:
       - name: Deploy via SSM
         env:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          INSTANCE_ID: ${{ matrix.instance.id }}
+          INSTANCE_ID: ${{ secrets[matrix.instance.secret_name] }}
         run: |
           aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
