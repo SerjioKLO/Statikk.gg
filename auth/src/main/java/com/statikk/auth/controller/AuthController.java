@@ -56,7 +56,7 @@ public class AuthController {
     }
 
     @GetMapping("/users/prueba")
-    public String holaMundo {
+    public String holaMundo() {
         return "Hola mundo";
     }
 }
