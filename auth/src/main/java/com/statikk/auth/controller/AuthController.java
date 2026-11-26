@@ -54,4 +54,9 @@ public class AuthController {
         UserDto userDto = authService.getUserProfile(id);
         return ResponseEntity.ok(userDto);
     }
+
+    @GetMapping("/users/prueba")
+    public ResponseEntity<String> holaMundo {
+        return ResponseEntity.ok("Hola mundo");
+    }
 }
